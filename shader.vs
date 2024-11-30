@@ -6,6 +6,7 @@ layout(location = 1) in float data_y;
 uniform mat4 projectionMatrix;
 
 void main() {
+    // gl_Position = vec4(data_x, data_y, 0, 1.0);
     gl_Position = projectionMatrix * vec4(data_x, data_y, 0.0, 1.0);
 }
 

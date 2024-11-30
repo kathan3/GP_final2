@@ -6,7 +6,7 @@ uniform isamplerBuffer dataTextureBuffer;
 uniform float range_min;
 uniform float range_max;
 uniform int textureSize;
-uniform float viewportWidth;
+uniform int viewportWidth;
 
 // Declare the SSBO to store results
 layout(std430, binding = 0) buffer MySSBO {
@@ -18,26 +18,31 @@ layout(binding = 1, offset = 0) uniform atomic_uint atomicCounter;
 
 void main() {
     // Reconstruct orig_data_x from gl_FragCoord.x
-    float orig_data_x = gl_FragCoord.x; 
-    orig_data_x += gl_FragCoord.y * viewportWidth;
-    
-    // Map orig_data_x to buffer coordinate index
-    float bufferCoord = orig_data_x;
+    float x_coord = gl_FragCoord.x;
+    float y_coord = gl_FragCoord.y;
 
+    x_coord = int(x_coord - fract(x_coord));
+    y_coord = int(y_coord - fract(y_coord));
+
+    int orig_data_x = int(x_coord - fract(x_coord)); 
+    orig_data_x += int(y_coord - fract(y_coord)) * viewportWidth;
+    
+    
+    // FragColor = vec4(0.0, fract(gl_FragCoord.y-0.5), 0.0, 1.0); // For visualization
+    // return;
+    // Map orig_data_x to buffer coordinate index
+    int index = orig_data_x;
     // Ensure bufferCoord is in range
-    if (bufferCoord < 0.0 || bufferCoord >= float(textureSize)) {
-        FragColor = vec4(0.0, 1.0, 0.0, 1.0); // For visualization
+    if (index < 0.0 || index >= textureSize) {
+        FragColor = vec4(0.0, 1.0, 1.0, 1.0); // For visualization
         return;
     }
   
-    // if(fract(bufferCoord) >= 0.51) {
-    //     FragColor = vec4(0.0, 1.0, 0.0, 1.0); // For visualization
-    //     return;
+    // if(fract(bufferCoord) <= 0.5) {
+        // FragColor = vec4(0.0, fract(bufferCoord), 0.0, 1.0); // For visualization
+        // return;
     // }
 
-
-    // Round to the nearest integer index
-    int index = int(bufferCoord + 0.5);
 
     // Sample the texture buffer
     int rowIdentifier = texelFetch(dataTextureBuffer, index).r;
@@ -50,7 +55,7 @@ void main() {
 
         // Atomically increment the counter and get a unique index
         uint dataIndex = atomicCounterIncrement(atomicCounter);
-
+        
         // Write the rowIdentifier into the SSBO at the unique index
         data[dataIndex] = rowIdentifier;
     }
