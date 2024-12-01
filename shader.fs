@@ -7,6 +7,7 @@ uniform float range_min;
 uniform float range_max;
 uniform int textureSize;
 uniform int viewportWidth;
+uniform bool screen;
 
 struct ResultData {
     int queryIndex;
@@ -24,10 +25,10 @@ flat in int fs_queryIndex;
 void main() {
     // Reconstruct orig_data_x from gl_FragCoord.x
     float x_coord = gl_FragCoord.x;
-    float y_coord = gl_FragCoord.y;
+    float y_coord = screen ? gl_FragCoord.y - 1 : gl_FragCoord.y;
 
-    x_coord = int(x_coord - fract(x_coord));
-    y_coord = int(y_coord - fract(y_coord));
+    // x_coord = int(x_coord - fract(x_coord));
+    // y_coord = int(y_coord - fract(y_coord));
 
     int orig_data_x = int(x_coord - fract(x_coord)); 
     orig_data_x += int(y_coord - fract(y_coord)) * viewportWidth;
