@@ -150,6 +150,11 @@ void APIENTRY MessageCallback(GLenum source, GLenum type, GLuint id, GLenum seve
     // std::cerr << "GL CALLBACK: " << message << std::endl;
 }
 
+struct ResultData {
+    int queryIndex;
+    int rowIdentifier;
+};
+
 
 class KKIndex {
 public: 
@@ -293,39 +298,35 @@ public:
         std::cout << "framebuffer_setup_time: " << elapsed.count() << " ms" << std::endl;
     }  
 
-    int createLinesForQuery(int query_x1, int query_x2) {
-        std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
-        struct LineVertex {
-            float x;
-            float y;
-        };
+int createLinesForQueries(const std::vector<std::pair<int, int>>& queries) {
+    std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+    struct LineVertex {
+        float x;
+        float y;
+        int queryIndex;
+    };
 
+    std::vector<LineVertex> lineVertices;
+    int queryCount = 0;
 
-        // modify the query_x1 and query_x2 so that point lookup can happen.
+    for (const auto& query : queries) {
+        int query_x1 = query.first;
+        int query_x2 = query.second;
+        int queryIndex = queryCount++;
+
+        // Modify the query_x1 and query_x2 so that point lookup can happen.
         assert(query_x1 <= query_x2);
-        // query_x2 += 0.5;
         auto query_range = query_x2 - query_x1;
-        if(query_range < 0.0) {
+        if (query_range < 0.0) {
             std::cerr << "query_x2 should be greater than query_x1" << std::endl;
             return -1;
         }
-        std::cout << "query_range: " << query_range << std::endl;
-        std::cout << "viewportSize: " << this->viewPortWidth * this->viewPortHeight << std::endl;
-        if(query_range >= this->viewPortWidth * this->viewPortHeight) {
-            std::cerr << "query range should be less than viewportWidth * viewportHeight" << std::endl;
-            return -1;
-        }
 
-        // Calculate starting point
+        // Calculate starting and ending points
         int start_y = static_cast<int>(query_x1 / this->viewPortWidth) + 1;
         int start_x = static_cast<int>(query_x1 - (start_y - 1) * this->viewPortWidth);
-
-        // Calculate ending point
         int end_y = static_cast<int>(query_x2 / this->viewPortWidth) + 1;
         int end_x = static_cast<int>(query_x2 - (end_y - 1) * this->viewPortWidth);
-
-        // Allocate line vertices array based on the viewport height
-        std::vector<LineVertex> lineVertices;
 
         // Iterate from start_y to end_y to create lines
         for (int y = start_y; y <= end_y; ++y) {
@@ -343,65 +344,179 @@ public:
                 endVertex.x = static_cast<float>(this->viewPortWidth);
             }
 
-            // Assign y-coordinates
+            // Assign y-coordinates and query index
             startVertex.y = static_cast<float>(y);
             endVertex.y = static_cast<float>(y);
+            startVertex.queryIndex = queryIndex;
+            endVertex.queryIndex = queryIndex;
 
             // Add the vertices to the lineVertices array
             lineVertices.push_back(startVertex);
             lineVertices.push_back(endVertex);
-            // std::cout << "Line: (" << startVertex.x << ", " << startVertex.y << ") -> (" << endVertex.x << ", " << endVertex.y << ")" << std::endl;
-        }   
-
-        // Generate and bind a Vertex Array Object (VAO) for the line
-        GLuint lineVAO, lineVBO;
-        glGenVertexArrays(1, &lineVAO);
-        glGenBuffers(1, &lineVBO);
-
-        glBindVertexArray(lineVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, lineVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(LineVertex) * lineVertices.size(), lineVertices.data(), GL_STATIC_DRAW);
-
-        // Specify the layout of the vertex data
-        glEnableVertexAttribArray(0);  // For data_x
-        glVertexAttribPointer(0, 1, GL_FLOAT, GL_FALSE, sizeof(LineVertex), (void*)offsetof(LineVertex, x));
-
-        glEnableVertexAttribArray(1);  // For data_y
-        glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(LineVertex), (void*)offsetof(LineVertex, y));
-        std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
-        std::cout << "line_creation_time: " << elapsed.count() << " ms" << std::endl;
-        std::cout << "no. of lines: " << lineVertices.size() << std::endl;
-
-        glBindVertexArray(lineVAO);
-        return lineVertices.size();
+        }
     }
 
-    void setupDataSSBO(int size) {
-        std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
-        glGenBuffers(1, &dataSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, dataSSBO); 
+    // Generate and bind a Vertex Array Object (VAO) for the lines
+    GLuint lineVAO, lineVBO;
+    glGenVertexArrays(1, &lineVAO);
+    glGenBuffers(1, &lineVBO);
+
+    glBindVertexArray(lineVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, lineVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(LineVertex) * lineVertices.size(), lineVertices.data(), GL_STATIC_DRAW);
+
+    // Specify the layout of the vertex data
+    glEnableVertexAttribArray(0);  // For data_x
+    glVertexAttribPointer(0, 1, GL_FLOAT, GL_FALSE, sizeof(LineVertex), (void*)offsetof(LineVertex, x));
+
+    glEnableVertexAttribArray(1);  // For data_y
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(LineVertex), (void*)offsetof(LineVertex, y));
+
+    glEnableVertexAttribArray(2);  // For queryIndex
+    glVertexAttribIPointer(2, 1, GL_INT, sizeof(LineVertex), (void*)offsetof(LineVertex, queryIndex));
+
+    std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
+    std::cout << "line_creation_time: " << elapsed.count() << " ms" << std::endl;
+    std::cout << "no. of lines: " << lineVertices.size() << std::endl;
+
+    glBindVertexArray(lineVAO);
+    return lineVertices.size();
+}
+
+
+    // int createLinesForQuery(int query_x1, int query_x2) {
+    //     std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+    //     struct LineVertex {
+    //         float x;
+    //         float y;
+    //     };
+
+
+    //     // modify the query_x1 and query_x2 so that point lookup can happen.
+    //     assert(query_x1 <= query_x2);
+    //     // query_x2 += 0.5;
+    //     auto query_range = query_x2 - query_x1;
+    //     if(query_range < 0.0) {
+    //         std::cerr << "query_x2 should be greater than query_x1" << std::endl;
+    //         return -1;
+    //     }
+    //     std::cout << "query_range: " << query_range << std::endl;
+    //     std::cout << "viewportSize: " << this->viewPortWidth * this->viewPortHeight << std::endl;
+    //     if(query_range >= this->viewPortWidth * this->viewPortHeight) {
+    //         std::cerr << "query range should be less than viewportWidth * viewportHeight" << std::endl;
+    //         return -1;
+    //     }
+
+    //     // Calculate starting point
+    //     int start_y = static_cast<int>(query_x1 / this->viewPortWidth) + 1;
+    //     int start_x = static_cast<int>(query_x1 - (start_y - 1) * this->viewPortWidth);
+
+    //     // Calculate ending point
+    //     int end_y = static_cast<int>(query_x2 / this->viewPortWidth) + 1;
+    //     int end_x = static_cast<int>(query_x2 - (end_y - 1) * this->viewPortWidth);
+
+    //     // Allocate line vertices array based on the viewport height
+    //     std::vector<LineVertex> lineVertices;
+
+    //     // Iterate from start_y to end_y to create lines
+    //     for (int y = start_y; y <= end_y; ++y) {
+    //         LineVertex startVertex, endVertex;
+
+    //         // Determine the x-coordinates for the current line
+    //         if (y == start_y) {
+    //             startVertex.x = static_cast<float>(start_x);
+    //             endVertex.x = static_cast<float>((y == end_y) ? end_x : this->viewPortWidth);
+    //         } else if (y == end_y) {
+    //             startVertex.x = 0.0f;
+    //             endVertex.x = static_cast<float>(end_x);
+    //         } else {
+    //             startVertex.x = 0.0f;
+    //             endVertex.x = static_cast<float>(this->viewPortWidth);
+    //         }
+
+    //         // Assign y-coordinates
+    //         startVertex.y = static_cast<float>(y);
+    //         endVertex.y = static_cast<float>(y);
+
+    //         // Add the vertices to the lineVertices array
+    //         lineVertices.push_back(startVertex);
+    //         lineVertices.push_back(endVertex);
+    //         // std::cout << "Line: (" << startVertex.x << ", " << startVertex.y << ") -> (" << endVertex.x << ", " << endVertex.y << ")" << std::endl;
+    //     }   
+
+    //     // Generate and bind a Vertex Array Object (VAO) for the line
+    //     GLuint lineVAO, lineVBO;
+    //     glGenVertexArrays(1, &lineVAO);
+    //     glGenBuffers(1, &lineVBO);
+
+    //     glBindVertexArray(lineVAO);
+    //     glBindBuffer(GL_ARRAY_BUFFER, lineVBO);
+    //     glBufferData(GL_ARRAY_BUFFER, sizeof(LineVertex) * lineVertices.size(), lineVertices.data(), GL_STATIC_DRAW);
+
+    //     // Specify the layout of the vertex data
+    //     glEnableVertexAttribArray(0);  // For data_x
+    //     glVertexAttribPointer(0, 1, GL_FLOAT, GL_FALSE, sizeof(LineVertex), (void*)offsetof(LineVertex, x));
+
+    //     glEnableVertexAttribArray(1);  // For data_y
+    //     glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(LineVertex), (void*)offsetof(LineVertex, y));
+    //     std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
+    //     std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
+    //     std::cout << "line_creation_time: " << elapsed.count() << " ms" << std::endl;
+    //     std::cout << "no. of lines: " << lineVertices.size() << std::endl;
+
+    //     glBindVertexArray(lineVAO);
+    //     return lineVertices.size();
+    // }
+
+void setupDataSSBO(int size) {
+    std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+    glGenBuffers(1, &dataSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, dataSSBO); 
+
+    glBufferData(GL_SHADER_STORAGE_BUFFER, size * sizeof(ResultData), nullptr, GL_DYNAMIC_COPY);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, dataSSBO);
+    std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
+
+    glGenBuffers(1, &atomicCounterBuffer);
+    glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicCounterBuffer);
+
+    // Allocate storage for the atomic counter (initialize to zero)
+    GLuint zero = 0;
+    glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_DRAW);
+    // Bind the atomic counter buffer to binding point 1 (matching the shader)
+    glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 1, atomicCounterBuffer);
+
+    std::cout << "data_ssbo_setup_time: " << elapsed.count() << " ms" << std::endl;
+}
+
+
+    // void setupDataSSBO(int size) {
+    //     std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+    //     glGenBuffers(1, &dataSSBO);
+    //     glBindBuffer(GL_SHADER_STORAGE_BUFFER, dataSSBO); 
         
-        std::cout << "here1" << std::endl;
-        std::vector<int> arr(size, -1);
-        std::cout << "here3" << std::endl;
-        glBufferData(GL_SHADER_STORAGE_BUFFER, size * sizeof(int), arr.data(), GL_DYNAMIC_COPY);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, dataSSBO);
-        std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
+    //     std::cout << "here1" << std::endl;
+    //     std::vector<int> arr(size, -1);
+    //     std::cout << "here3" << std::endl;
+    //     glBufferData(GL_SHADER_STORAGE_BUFFER, size * sizeof(int), arr.data(), GL_DYNAMIC_COPY);
+    //     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, dataSSBO);
+    //     std::chrono::high_resolution_clock::time_point endTime = std::chrono::high_resolution_clock::now();
+    //     std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
 
 
-        glGenBuffers(1, &atomicCounterBuffer);
-        glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicCounterBuffer);
+    //     glGenBuffers(1, &atomicCounterBuffer);
+    //     glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, atomicCounterBuffer);
 
-        // Allocate storage for the atomic counter (initialize to zero)
-        GLuint zero = 0;
-        glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_DRAW);
-        // Bind the atomic counter buffer to binding point 1 (matching the shader)
-        glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 1, atomicCounterBuffer);
+    //     // Allocate storage for the atomic counter (initialize to zero)
+    //     GLuint zero = 0;
+    //     glBufferData(GL_ATOMIC_COUNTER_BUFFER, sizeof(GLuint), &zero, GL_DYNAMIC_DRAW);
+    //     // Bind the atomic counter buffer to binding point 1 (matching the shader)
+    //     glBindBufferBase(GL_ATOMIC_COUNTER_BUFFER, 1, atomicCounterBuffer);
         
-        std::cout << "data_ssbo_setup_time: " << elapsed.count() << " ms" << std::endl;
-    }
+    //     std::cout << "data_ssbo_setup_time: " << elapsed.count() << " ms" << std::endl;
+    // }
 
     int query(float query_x1, float query_x2) {
         std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
@@ -514,8 +629,10 @@ int main(int argc, char** argv) {
 
     int windowWidth = 8192;
     int windowHeight = 8192;
+
+    // NOTE: change the window size from 10x10 to windowWidth x windowHeight when useFBO is false
     // Create window
-    GLFWwindow* window = glfwCreateWindow(windowWidth, windowHeight, "OpenGL Line-Point Intersection", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(10, 10, "OpenGL Line-Point Intersection", NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();

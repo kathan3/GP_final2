@@ -2,13 +2,28 @@
 
 layout(location = 0) in float data_x;
 layout(location = 1) in float data_y;
+layout(location = 2) in int queryIndex;
 
 uniform mat4 projectionMatrix;
 
+flat out int fs_queryIndex;
+
 void main() {
-    // gl_Position = vec4(data_x, data_y, 0, 1.0);
     gl_Position = projectionMatrix * vec4(data_x, data_y, 0.0, 1.0);
+    fs_queryIndex = queryIndex;
 }
+
+// /* #version 460
+
+// layout(location = 0) in float data_x;
+// layout(location = 1) in float data_y;
+
+// uniform mat4 projectionMatrix;
+
+// void main() {
+//     // gl_Position = vec4(data_x, data_y, 0, 1.0);
+//     gl_Position = projectionMatrix * vec4(data_x, data_y, 0.0, 1.0);
+// }
 
 // #version 460
 

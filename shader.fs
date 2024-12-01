@@ -8,13 +8,18 @@ uniform float range_max;
 uniform int textureSize;
 uniform int viewportWidth;
 
-// Declare the SSBO to store results
-layout(std430, binding = 0) buffer MySSBO {
-    int data[];
+struct ResultData {
+    int queryIndex;
+    int rowIdentifier;
 };
 
-// Declare the atomic counter
+layout(std430, binding = 0) buffer MySSBO {
+    ResultData data[];
+};
+
 layout(binding = 1, offset = 0) uniform atomic_uint atomicCounter;
+
+flat in int fs_queryIndex;
 
 void main() {
     // Reconstruct orig_data_x from gl_FragCoord.x
@@ -26,25 +31,13 @@ void main() {
 
     int orig_data_x = int(x_coord - fract(x_coord)); 
     orig_data_x += int(y_coord - fract(y_coord)) * viewportWidth;
-    
-    
-    // FragColor = vec4(0.0, fract(gl_FragCoord.y-0.5), 0.0, 1.0); // For visualization
-    // return;
-    // Map orig_data_x to buffer coordinate index
+
     int index = orig_data_x;
-    // Ensure bufferCoord is in range
-    if (index < 0.0 || index >= textureSize) {
+    if (index < 0 || index >= textureSize) {
         FragColor = vec4(0.0, 1.0, 1.0, 1.0); // For visualization
         return;
     }
-  
-    // if(fract(bufferCoord) <= 0.5) {
-        // FragColor = vec4(0.0, fract(bufferCoord), 0.0, 1.0); // For visualization
-        // return;
-    // }
 
-
-    // Sample the texture buffer
     int rowIdentifier = texelFetch(dataTextureBuffer, index).r;
 
     if (rowIdentifier == -1) {
@@ -55,11 +48,75 @@ void main() {
 
         // Atomically increment the counter and get a unique index
         uint dataIndex = atomicCounterIncrement(atomicCounter);
-        
-        // Write the rowIdentifier into the SSBO at the unique index
-        data[dataIndex] = rowIdentifier;
+
+        // Write the queryIndex and rowIdentifier into the SSBO
+        data[dataIndex].queryIndex = fs_queryIndex;
+        data[dataIndex].rowIdentifier = rowIdentifier;
     }
 }
+
+// #version 460
+
+// out vec4 FragColor;
+
+// uniform isamplerBuffer dataTextureBuffer;
+// uniform float range_min;
+// uniform float range_max;
+// uniform int textureSize;
+// uniform int viewportWidth;
+
+// // Declare the SSBO to store results
+// layout(std430, binding = 0) buffer MySSBO {
+//     int data[];
+// };
+
+// // Declare the atomic counter
+// layout(binding = 1, offset = 0) uniform atomic_uint atomicCounter;
+
+// void main() {
+//     // Reconstruct orig_data_x from gl_FragCoord.x
+//     float x_coord = gl_FragCoord.x;
+//     float y_coord = gl_FragCoord.y;
+
+//     x_coord = int(x_coord - fract(x_coord));
+//     y_coord = int(y_coord - fract(y_coord));
+
+//     int orig_data_x = int(x_coord - fract(x_coord)); 
+//     orig_data_x += int(y_coord - fract(y_coord)) * viewportWidth;
+    
+    
+//     // FragColor = vec4(0.0, fract(gl_FragCoord.y-0.5), 0.0, 1.0); // For visualization
+//     // return;
+//     // Map orig_data_x to buffer coordinate index
+//     int index = orig_data_x;
+//     // Ensure bufferCoord is in range
+//     if (index < 0.0 || index >= textureSize) {
+//         FragColor = vec4(0.0, 1.0, 1.0, 1.0); // For visualization
+//         return;
+//     }
+  
+//     // if(fract(bufferCoord) <= 0.5) {
+//         // FragColor = vec4(0.0, fract(bufferCoord), 0.0, 1.0); // For visualization
+//         // return;
+//     // }
+
+
+//     // Sample the texture buffer
+//     int rowIdentifier = texelFetch(dataTextureBuffer, index).r;
+
+//     if (rowIdentifier == -1) {
+//         discard; // No data point at this position
+//     } else {
+//         // Output the fragment and use the rowIdentifier for further processing
+//         FragColor = vec4(1.0, 0.0, 0.0, 1.0); // For visualization
+
+//         // Atomically increment the counter and get a unique index
+//         uint dataIndex = atomicCounterIncrement(atomicCounter);
+        
+//         // Write the rowIdentifier into the SSBO at the unique index
+//         data[dataIndex] = rowIdentifier;
+//     }
+// } */
 
 // #version 460
 
