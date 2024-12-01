@@ -238,6 +238,7 @@ public:
     int viewPortHeight;
     GLuint atomicCounterBuffer;
     GLuint dataSSBO;
+    std::vector<Subquery> lastSubqueries;
 
     void loadTableData(const char *filename)
     {
@@ -611,9 +612,29 @@ public:
 
     int query(const std::vector<std::pair<int, int>> &queries)
     {
-        std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
-        auto non_overlapping_queries = decomposeQueries(queries);
-        int lines = createLinesForQueries(non_overlapping_queries);
+     std::chrono::high_resolution_clock::time_point startTime = std::chrono::high_resolution_clock::now();
+    
+        std::vector<Subquery> subqueries;
+    
+        if (queriesAreNonOverlapping) {
+            // Directly convert queries to subqueries without decomposition
+            int queryIndex = 0;
+            for (const auto& query : queries) {
+                Subquery subquery;
+                subquery.start = query.first;
+                subquery.end = query.second;
+                subquery.queryIndex = queryIndex++;
+                subquery.originalQueries.insert(queryIndex - 1);
+                subqueries.push_back(subquery);
+            }
+        } else {
+            // Perform decomposition for overlapping queries
+            subqueries = decomposeQueries(queries);
+        }
+        
+        lastSubqueries = subqueries;
+
+        int lines = createLinesForQueries(subqueries);
 
         glDrawArrays(GL_LINES, 0, lines);
 
@@ -714,12 +735,25 @@ public:
 
 int main(int argc, char **argv)
 {
-    if (argc < 4 || (argc - 2) % 2 != 0) {
-        std::cerr << "Usage: " << argv[0] << " <table_file> <query_x1 query_x2 ...>" << std::endl;
+    if (argc < 4 || ((argc - 2) % 2 != 0 && argc < 5)) {
+        std::cerr << "Usage: " << argv[0] << " <table_file> <query_x1 query_x2 ...> [--non-overlapping]" << std::endl;
         return -1;
     }
 
     const char *tableFile = argv[1];
+
+    // Check for the flag at the end of arguments
+    int numQueryArgs = argc - 2;
+    if (std::string(argv[argc - 1]) == "--non-overlapping") {
+        queriesAreNonOverlapping = true;
+        numQueryArgs -= 1; // Exclude the flag from query arguments
+    }
+
+    if (numQueryArgs % 2 != 0) {
+        std::cerr << "Error: Each query should have a start and end value." << std::endl;
+        return -1;
+    }
+
 
     // Initialize OpenGL context (using GLFW)
     if (!glfwInit())
@@ -792,7 +826,7 @@ int main(int argc, char **argv)
         queries.push_back({query_x1, query_x2});
     }
 
-    int totalEntries = kkIndex.query(queries);
+    int totalEntries = kkIndex.query(queries, queriesAreNonOverlapping);
 
     // int width, height;
     // glfwGetWindowSize(window, &width, &height);
@@ -814,7 +848,7 @@ int main(int argc, char **argv)
     // Initialize a vector of sets, one set per query
     std::vector<std::set<int>> queryResults(numQueries);
 
-    auto subqueries = decomposeQueries(queries);
+    auto subqueries = kkIndex.lastSubqueries;
     // Process the SSBO data
     for (GLuint i = 0; i < std::min(ssboDataSize, totalEntries); ++i)
     {
