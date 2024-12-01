@@ -783,6 +783,7 @@ int main(int argc, char **argv)
     int ssboDataSize = windowWidth * windowHeight;
     kkIndex.setupDataSSBO(ssboDataSize);
 
+    // TODO: take from the queries file.....
     std::vector<std::pair<int, int>> queries;
 
     for (int i = 2; i < argc; i += 2) {
